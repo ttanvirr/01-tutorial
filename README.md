@@ -121,6 +121,7 @@ The PostgreSQL server can handle multiple concurrent connections from clients. T
   ```
 
   > [!CAUTION]
+  >
   > **Be careful:**
   > This permanently deletes the database and its data
 
