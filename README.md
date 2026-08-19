@@ -120,8 +120,8 @@ The PostgreSQL server can handle multiple concurrent connections from clients. T
   $ dropdb mydb
   ```
 
-  > [!CAUTION] Be careful:
-  >
+  > [!CAUTION]
+  > **Be careful:**
   > This permanently deletes the database and its data
 
 ## 1.5. Accessing a Database
