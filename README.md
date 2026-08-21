@@ -10,6 +10,8 @@
   - [2.1. Introduction](#21-introduction)
   - [2.2. Concepts](#22-concepts)
   - [2.3. Creating a New Table](#23-creating-a-new-table)
+  - [2.4. Populating a Table with Rows](#24-populating-a-table-with-rows)
+  - [2.5. Querying a Table](#25-querying-a-table)
 
 # 1. Chapter 1: Getting Started
 
@@ -302,4 +304,179 @@ You can remove a table using the following command:
 
 ```psql
 DROP TABLE <table_name>;
+```
+
+## 2.4. Populating a Table with Rows
+
+The `INSERT` statement is used to populate a table with rows:
+
+`psql`
+
+```psql
+mydb=> INSERT INTO weather VALUES ('San Francisco', 46, 50, 0.25, '1994-11-27');
+```
+
+Note that constants that are not simple numeric values usually must be surrounded by single quotes (`'`).
+
+The `point` type requires a coordinate pair as input:
+
+`psql`
+
+```psql
+mydb=> INSERT INTO cities VALUES ('San Francisco', '(-194.0, 53.0)');
+```
+
+The syntax requires you to remember the order of the columns. An alternative syntax allows you to list the columns explicitly. You can list the columns in a different order if you wish or even omit some columns, e.g., if the 'precipitation' is unknown:
+
+`psql`
+
+```psql
+mydb=> INSERT INTO weather (date, city, temp_hi, temp_lo)
+mydb=> VALUES ('1994-11-29', 'Hayward', 54, 37);
+```
+
+Please enter all the commands shown above so you have some data to work with in the following sections.
+
+You could also have used `COPY` to load large amounts of data from flat-text files. This is usually faster. An example would be:
+
+`psql`
+
+```psql
+mydb=> COPY weather FROM '/home/user/weather.txt';
+```
+
+> [!NOTE]
+> With `COPY`, the source file must be on the machine running the PostgreSQL server because the server reads the file directly. To read a file from the client machine, use `\copy` instead.
+
+The data inserted above into the `weather` table could be inserted from a file containing (values are separated by a `tab` character):
+
+```txt
+San Francisco 46 50 0.25 1994-11-27
+San Francisco 43 57 0.0 1994-11-29
+Hayward 37 54 \N 1994-11-29
+```
+
+## 2.5. Querying a Table
+
+An SQL `SELECT` statement is used to _query_ a table (retrieve data from a table). For example, to retrieve all the rows of table `weather`, type:
+
+`psql`
+
+```psql
+mydb=> SELECT * FROM weather;
+```
+
+Here `*` is a shorthand for “all columns”. This is the shortcut for:
+
+```psql
+mydb=> SELECT city, temp_lo, temp_hi, prcp, date FROM weather;
+```
+
+The output should be like:
+
+```
+     city      | temp_lo | temp_hi | prcp |    date
+---------------+---------+---------+------+------------
+ San Francisco |      46 |      50 | 0.25 | 1994-11-27
+ Hayward       |      37 |      54 |      | 1994-11-29
+ Dhaka         |      79 |      92 |  0.1 | 2026-08-18
+ Chattogram    |      78 |      89 | 0.35 | 2026-08-18
+(4 rows)
+```
+
+### Using expressions <!-- omit in toc -->
+
+You can write expressions, not just simple column references. For example, you can do:
+
+```psql
+mydb=> SELECT city, (temp_hi+temp_lo)/2 AS temp_avg, date FROM weather;
+```
+
+This should give:
+
+```psql
+     city      | temp_avg |    date
+---------------+----------+------------
+ San Francisco |       48 | 1994-11-27
+ Hayward       |       45 | 1994-11-29
+ Dhaka         |       85 | 2026-08-18
+ Chattogram    |       83 | 2026-08-18
+(4 rows)
+```
+
+Notice how the `AS` clause (optional) is used to relabel the output column.
+
+### Query specific rows <!-- omit in toc -->
+
+A query can be “qualified” by adding a `WHERE` clause that specifies which rows are wanted. The usual Boolean operators (`AND`, `OR`, and `NOT`) are allowed in the qualification. For example, the following retrieves the weather of San Francisco on rainy days:
+
+`psql`
+
+```psql
+SELECT * FROM weather
+  WHERE city = 'San Francisco' AND prcp > 0.0;
+```
+
+Result:
+
+```psql
+     city      | temp_lo | temp_hi | prcp |    date
+---------------+---------+---------+------+------------
+ San Francisco |      46 |      50 | 0.25 | 1994-11-27
+(1 row)
+```
+
+### Sorting <!-- omit in toc -->
+
+The results of a query can be returned in sorted order:
+
+`psql`
+
+```psql
+SELECT * FROM weather
+  ORDER BY city, temp_lo;
+```
+
+`psql`
+
+```psql
+city | temp_lo | temp_hi | prcp | date
+---------------+---------+---------+------+------------
+Hayward | 37 | 54 | | 1994-11-29
+San Francisco | 43 | 57 | 0 | 1994-11-29
+San Francisco | 46 | 50 | 0.25 | 1994-11-27
+```
+
+### Remove duplicate rows <!-- omit in toc -->
+
+You can request that duplicate rows be removed from the result of a query:
+
+`psql`
+
+```psql
+SELECT DISTINCT city
+    FROM weather;
+```
+
+Output:
+
+```psql
+     city
+---------------
+ Chattogram
+ Dhaka
+ Hayward
+ San Francisco
+(4 rows)
+```
+
+Here, the result row ordering might vary. You can ensure consistent results by using `DISTINCT` and `ORDER BY` together:
+
+`psql`
+
+```psql
+SELECT DISTINCT city
+  FROM weather
+  ORDER BY city;
+
 ```
