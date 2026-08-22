@@ -12,6 +12,12 @@
   - [2.3. Creating a New Table](#23-creating-a-new-table)
   - [2.4. Populating a Table with Rows](#24-populating-a-table-with-rows)
   - [2.5. Querying a Table](#25-querying-a-table)
+  - [2.6. Joins Between Tables](#26-joins-between-tables)
+    - [2.6.1. Outer join](#261-outer-join)
+    - [2.6.2. Self join and abbreviation](#262-self-join-and-abbreviation)
+  - [2.7. Aggregate Functions](#27-aggregate-functions)
+  - [2.8. Updates](#28-updates)
+  - [2.9. Deletions](#29-deletions)
 
 # 1. Chapter 1: Getting Started
 
@@ -236,6 +242,8 @@ Tables are grouped into databases, and a collection of databases managed by a si
 - column has specific data type and fixed order in a row
 - rows have no guaranteed order unless explicitly sorted
 
+[⬆️ Return to Table of contents](#table-of-contents)
+
 ## 2.3. Creating a New Table
 
 You can create a new table by specifying the table name, along with all column names and their types:
@@ -306,6 +314,8 @@ You can remove a table using the following command:
 DROP TABLE <table_name>;
 ```
 
+[⬆️ Return to Table of contents](#table-of-contents)
+
 ## 2.4. Populating a Table with Rows
 
 The `INSERT` statement is used to populate a table with rows:
@@ -355,6 +365,8 @@ San Francisco 46 50 0.25 1994-11-27
 San Francisco 43 57 0.0 1994-11-29
 Hayward 37 54 \N 1994-11-29
 ```
+
+[⬆️ Return to Table of contents](#table-of-contents)
 
 ## 2.5. Querying a Table
 
@@ -480,3 +492,343 @@ SELECT DISTINCT city
   ORDER BY city;
 
 ```
+
+[⬆️ Return to Table of contents](#table-of-contents)
+
+## 2.6. Joins Between Tables
+
+Queries can access multiple tables at once, or multiple rows (instances) of the same table at one time. This type of queries are called _`join queries`_.
+
+For example, to return all the weather records together with the location of the associated city, the database needs to compare the `city` column of each row of the `weather` table with the `name` column of all rows in the `cities` table. This would be accomplished by the following query:
+
+`psql`
+
+```psql
+mydb=> SELECT * FROM weather JOIN cities ON city = name;
+```
+
+Output:
+
+```psql
+     city      | temp_lo | temp_hi | prcp |    date    |     name      |     location
+---------------+---------+---------+------+------------+---------------+-------------------
+ San Francisco |      46 |      50 | 0.25 | 1994-11-27 | San Francisco | (-194,53)
+ Dhaka         |      79 |      92 |  0.1 | 2026-08-18 | Dhaka         | (90.4125,23.8103)
+ Dhaka         |      75 |      95 |  0.2 | 2026-08-17 | Dhaka         | (90.4125,23.8103)
+(3 rows)
+```
+
+Observe two things here:
+
+- There is no result row for the city of Hayward and Chattogram. This is because there is no matching entry in the `cities` table for them. We will see shortly how this can be fixed.
+
+- There are two columns containing the city name. In practice this is undesirable, though, so you will probably want to list the output columns explicitly rather than using `*`:
+
+  ```psql
+  SELECT city, temp_lo, temp_hi, prcp, date, location
+      FROM weather JOIN cities ON city = name;
+  ```
+
+Since the columns all had different names, the parser automatically found which table they belong to. If there were duplicate column names in the two tables you'd need to _qualify_ the column names to show which one you meant, as in:
+
+`psql`
+
+```psql
+SELECT weather.city, weather.temp_lo, weather.temp_hi,
+       weather.prcp, weather.date, cities.location
+    FROM weather JOIN cities ON weather.city = cities.name;
+```
+
+It is widely considered good style for this type of queries.
+
+> [!NOTE]
+> Join queries we wrote so far can also be written in this form:
+>
+> ```psql
+> SELECT *
+>    FROM weather, cities
+>    WHERE city = name;
+> ```
+>
+> But this is old style and not recommended.
+
+### 2.6.1. Outer join
+
+Now we will figure out how we can get the Hayward and Chattogram records back in. What we want the query to do is to scan the `weather` table and for each row to find the matching `cities` row(s). If no matching row is found we want some “empty/null values” to be substituted for the `cities` table's columns. This kind of query is called an _`outer join`_. (The joins we have seen so far are _`inner joins`_.) The command looks like this:
+
+`psql`
+
+```psql
+SELECT *
+    FROM weather LEFT OUTER JOIN cities ON weather.city = cities.name;
+```
+
+Output:
+
+```psql
+     city      | temp_lo | temp_hi | prcp |    date    |     name      |     location
+---------------+---------+---------+------+------------+---------------+-------------------
+ San Francisco |      46 |      50 | 0.25 | 1994-11-27 | San Francisco | (-194,53)
+ Hayward       |      37 |      54 |      | 1994-11-29 |               |
+ Dhaka         |      79 |      92 |  0.1 | 2026-08-18 | Dhaka         | (90.4125,23.8103)
+ Chattogram    |      78 |      89 | 0.35 | 2026-08-18 |               |
+ Dhaka         |      75 |      95 |  0.2 | 2026-08-17 | Dhaka         | (90.4125,23.8103)
+(5 rows)
+```
+
+This query is actually called a _`left outer join`_ because the table mentioned on the left of the join operator will have each of its rows in the output, whereas the table on the right will only have those rows output that match some row of the left table. When outputting a left-table row for which there is no right-table match, empty (null) values are substituted for the right-table columns.
+
+**Exercise:** There are also _`right outer joins`_ and _`full outer joins`_. Try to find out what those do.
+
+### 2.6.2. Self join and abbreviation
+
+We can also join a table against itself. This is called a _`self join`_. As an example, suppose we wish to find all the weather records that are in the temperature range of other weather records. So we need to compare the `temp_lo` and `temp_hi` columns of each weather row to the `temp_lo` and `temp_hi` columns of all other weather rows. We can do this with the following query:
+
+`psql`
+
+```psql
+SELECT w1.city, w1.temp_lo AS low, w1.temp_hi AS high,
+       w2.city, w2.temp_lo AS low, w2.temp_hi AS high
+    FROM weather w1 JOIN weather w2
+        ON w1.temp_lo < w2.temp_lo AND w1.temp_hi > w2.temp_hi;
+```
+
+Output:
+
+```psql
+  city   | low | high |     city      | low | high
+---------+-----+------+---------------+-----+------
+ Hayward |  37 |   54 | San Francisco |  46 |   50
+ Dhaka   |  75 |   95 | Dhaka         |  79 |   92
+ Dhaka   |  75 |   95 | Chattogram    |  78 |   89
+(3 rows)
+```
+
+Here we have relabeled the `weather` table as `w1` and `w2` to be able to distinguish the left and right side of the join. You can also use these kinds of aliases in other queries. e.g.:
+
+`psql`
+
+```psql
+SELECT *
+  FROM weather w JOIN cities c ON w.city = c.name;
+```
+
+You will encounter this style of abbreviating quite frequently.
+
+[⬆️ Return to Table of contents](#table-of-contents)
+
+## 2.7. Aggregate Functions
+
+An _`aggregate function`_ computes a single result from multiple input rows. For example, there are aggregates to compute the `count`, `sum`, `avg` (average), `max` (maximum) and `min` (minimum) over a set of rows.
+
+As an example, we can find the highest low-temperature reading within `weather` table with:
+
+`psql`
+
+```psql
+SELECT max(temp_lo) FROM weather;
+```
+
+Output:
+
+```psql
+ max
+-----
+  79
+(1 row)
+```
+
+If we want to know what city (or cities) that reading occurred in, we can accomplish this by using a _subquery_ with `WHERE` clause:
+
+`psql`
+
+```psql
+SELECT city FROM weather
+    WHERE temp_lo = (SELECT max(temp_lo) FROM weather);
+```
+
+Output:
+
+```psql
+ city
+-------
+ Dhaka
+(1 row)
+```
+
+Aggregates are also very useful in combination with `GROUP BY` clauses. For example, we can get the number of readings (cities) and the maximum low temperature observed in each city with:
+
+`psql`
+
+```psql
+SELECT city, count(*), max(temp_lo)
+    FROM weather
+    GROUP BY city;
+```
+
+Output:
+
+```psql
+     city      | count | max
+---------------+-------+-----
+ Chattogram    |     1 |  78
+ Dhaka         |     2 |  79
+ Hayward       |     1 |  37
+ San Francisco |     1 |  46
+(4 rows)
+```
+
+`GROUP BY city` gives us one output row per city.
+
+We can filter these grouped rows using `HAVING`:
+
+`psql`
+
+```psql
+SELECT city, count(*), max(temp_lo)
+    FROM weather
+    GROUP BY city
+    HAVING max(temp_lo) < 40;
+```
+
+Output:
+
+```psql
+  city   | count | max
+---------+-------+-----
+ Hayward |     1 |  37
+(1 row)
+```
+
+which gives us the same results for only the cities that have max `temp_lo` values below 40.
+
+Finally, if we only care about cities whose names begin with “D”, we might do:
+
+`psql`
+
+```psql
+SELECT city, count(*), max(temp_lo)
+    FROM weather
+    WHERE city LIKE 'D%'
+    GROUP BY city;
+```
+
+Output:
+
+```psql
+ city  | count | max
+-------+-------+-----
+ Dhaka |     2 |  79
+(1 row)
+```
+
+The `LIKE` operator does pattern matching and is explained [here](https://tinyurl.com/4suwnnj6).
+
+It is important to understand the interaction between aggregates and SQL's `WHERE` and `HAVING` clauses (both used for filtering).
+
+- `WHERE` selects input rows before groups and aggregates are computed. Thus, the `WHERE` clause must not contain aggregate functions;
+- `HAVING` selects group rows after groups and aggregates are computed and the `HAVING` clause always contains aggregate functions.
+
+Another way to select the rows that go into an aggregate computation is to use `FILTER`, which is a per-aggregate option:
+
+`psql`
+
+```psql
+SELECT city, count(*) FILTER (WHERE temp_lo < 45), max(temp_lo)
+    FROM weather
+    GROUP BY city;
+```
+
+Output:
+
+```psql
+     city      | count | max
+---------------+-------+-----
+ Chattogram    |     0 |  78
+ Dhaka         |     0 |  79
+ Hayward       |     1 |  37
+ San Francisco |     0 |  46
+(4 rows)
+```
+
+`FILTER` is much like `WHERE`, except that it removes rows only from the input of the particular aggregate function that it is attached to. Here, the `count` aggregate counts only rows with `temp_lo` below 45; but the `max` aggregate is still applied to all rows, so it still finds the reading of 46.
+
+[⬆️ Return to Table of contents](#table-of-contents)
+
+## 2.8. Updates
+
+You can update existing rows using the `UPDATE` command. Suppose you discover the temperature readings are all off by 2 degrees after November 28. You can correct the data as follows:
+
+`psql`
+
+```psql
+UPDATE weather
+    SET temp_hi = temp_hi - 2,  temp_lo = temp_lo - 2
+    WHERE date > '1994-11-28';
+```
+
+Look at the new state of the data:
+
+`psql`
+
+```psql
+SELECT * FROM weather;
+```
+
+Output:
+
+```
+     city      | temp_lo | temp_hi | prcp |    date
+---------------+---------+---------+------+------------
+ San Francisco |      46 |      50 | 0.25 | 1994-11-27
+ Hayward       |      35 |      52 |      | 1994-11-29
+ Dhaka         |      77 |      90 |  0.1 | 2026-08-18
+ Chattogram    |      76 |      87 | 0.35 | 2026-08-18
+ Dhaka         |      73 |      93 |  0.2 | 2026-08-17
+(5 rows)
+```
+
+[⬆️ Return to Table of contents](#table-of-contents)
+
+## 2.9. Deletions
+
+Rows can be removed from a table using the `DELETE` command. Suppose you are no longer interested in the weather of Hayward. Then you can do the following:
+
+`psql`
+
+```psql
+mydb=> DELETE FROM weather WHERE city = 'Hayward';
+```
+
+All weather records belonging to Hayward are removed.
+
+`psql`
+
+```psql
+SELECT * FROM weather;
+```
+
+Output:
+
+```psql
+     city      | temp_lo | temp_hi | prcp |    date
+---------------+---------+---------+------+------------
+ San Francisco |      46 |      50 | 0.25 | 1994-11-27
+ Dhaka         |      77 |      90 |  0.1 | 2026-08-18
+ Chattogram    |      76 |      87 | 0.35 | 2026-08-18
+ Dhaka         |      73 |      93 |  0.2 | 2026-08-17
+(4 rows)
+```
+
+> [!CAUTION]
+> One should be wary of statements of the form
+>
+> `psql`
+>
+> ```psql
+> DELETE FROM tablename;
+> ```
+>
+> Without a qualification, `DELETE` will remove all rows from the given table, leaving it empty. The system will not request confirmation before doing this!
+
+[⬆️ Return to Table of contents](#table-of-contents)
